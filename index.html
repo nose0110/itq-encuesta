@@ -467,57 +467,57 @@ industrial: `
 
 async function cargarPreguntas() {
     const URL_SCRIPT = "https://script.google.com/macros/s/AKfycbzZ88U-6IniBVNlttp38YigPSqkWqjKjf5EIVHvmW44Pq9JBqnbVPfMmR66wDVDhwvT8g/exec"; // La que probaste en el navegador
-    
-    try {
-     const response = await fetch(URL_SCRIPT);
-        // Convertimos la respuesta a JSON
-        preguntas = await response.json(); 
+try {
+        const response = await fetch(URL_SCRIPT);
+        // IMPORTANTE: Asegúrate de que el script de Google devuelva JSON puro
+        const data = await response.json(); 
         
-        console.log("Preguntas cargadas:", preguntas); // Para que las veas en F12
-
-        if (preguntas && preguntas.length > 0) {
-            indice = 0; // Reiniciamos el contador
-            mostrarPregunta();
-        }
+        console.log("Datos recibidos de Google:", data);
+        
+        preguntas = data; // Guardamos en la variable global
+        mostrarPregunta();
     } catch (error) {
-        console.error("Error cargando el JSON:", error);
+        console.error("Error al cargar:", error);
+    }
 }
 
 function mostrarPregunta() {
-    if (!preguntas || preguntas.length === 0) return;
+    // Control del botón regresar y barra de progreso
+    regresarBtn.style.display = (indice > 0) ? 'block' : 'none';
+    const porcentaje = (indice / preguntas.length) * 100;
+    document.getElementById("barra").style.width = porcentaje + "%";
 
-    const preguntaActual = preguntas[indice];
-    const contenedorPregunta = document.getElementById('pregunta');
-    const contenedorOpciones = document.getElementById('opciones');
+    if (indice < preguntas.length) {
+        const preguntaActual = preguntas[indice];
+        document.getElementById("pregunta").innerText = preguntaActual.texto;
 
-    // 1. Ponemos el texto
-    contenedorPregunta.innerText = preguntaActual.texto;
-
-    // 2. Limpiamos botones viejos
-    contenedorOpciones.innerHTML = '';
-
-    // 3. Botón SÍ (Usa categoriaSi del Excel)
-    const btnSi = document.createElement('button');
-    btnSi.innerText = "Sí";
-    btnSi.onclick = () => procesarRespuesta(preguntaActual.categoriaSi);
-
-    // 4. Botón NO (Usa categoriaNo del Excel)
-    const btnNo = document.createElement('button');
-    btnNo.innerText = "No";
-    btnNo.onclick = () => procesarRespuesta(preguntaActual.categoriaNo);
-
-    contenedorOpciones.appendChild(btnSi);
-    contenedorOpciones.appendChild(btnNo);
+        // Creamos los botones Sí y No manualmente
+        // Importante: usamos 'responder' que es el nombre que ya tenías
+        let opcionesHTML = `
+            <button onclick="responder('${preguntaActual.categoriaSi}')">Sí</button>
+            <button onclick="responder('${preguntaActual.categoriaNo}')">No</button>
+        `;
+        
+        document.getElementById("opciones").innerHTML = opcionesHTML;
+    } else {
+        // Cambié mostrarResultado() por finalizarTest() si es que así se llama tu función de cierre
+        mostrarResultado(); 
+    }
 }
 
-    function responder(categoria) {
-        historialRespuestas[indice] = categoria;
-        if (categoria !== 'ninguna' && puntajes.hasOwnProperty(categoria)) {
-            puntajes[categoria]++;
-        }
-        indice++;
-        mostrarPregunta();
+function responder(categoria) {
+    // Guardamos qué categoría se eligió en este índice para poder "Regresar" después
+    historialRespuestas[indice] = categoria;
+
+    // Sumamos punto si la categoría es válida
+    if (categoria && categoria !== 'ninguna' && puntajes.hasOwnProperty(categoria)) {
+        puntajes[categoria]++;
     }
+
+    // Avanzamos a la siguiente
+    indice++;
+    mostrarPregunta();
+}
 
    // --- FUNCIÓN MOSTRAR RESULTADO (COMPLETA Y CORREGIDA) ---
     async function mostrarResultado() {
@@ -635,36 +635,64 @@ function mostrarPregunta() {
         });
     });
 
-   async function guardarResultadosEnBD(carreraGanadora) {
-        const estadoGuardado = document.getElementById('estado-guardado');
-        estadoGuardado.innerText = "Guardando tus resultados...";
+   async function guardarResultadosEnBD(ganadora) {
+      const URL_SCRIPT = "https://script.google.com/macros/s/AKfycbyf2FXAS2qgi7Kf7u7fbb9aLvlWsVnQZWNsq8yVXb2VfitnGF0avar9XfuortlzHUWeSw/exec";
+    
+    // Mostramos un mensaje en consola para estar seguros de qué estamos enviando
+    console.log("Enviando resultados de:", datosUsuario.nombre, "Carrera:", ganadora);
+// 2. Validación de seguridad
+    if (!datosUsuario || !datosUsuario.nombre) {
+        console.error("Faltan datos del usuario.");
+        return;
+    }
 
-        // El payload ahora contiene nombre, telefono y correo
-        const payload = {
-            usuario: datosUsuario,
-            puntajes: puntajes,
-            carrera_recomendada: carreraGanadora
-        };
+    // 3. Creamos el objeto EXACTO con todas las carreras expandidas
+    // Asegúrate de que los nombres coincidan con tu objeto 'puntajes'
+    const datosFinales = {
+        nombre: datosUsuario.nombre.trim(),
+        telefono: datosUsuario.telefono ? datosUsuario.telefono.trim() : "N/A",
+        correo: datosUsuario.correo ? datosUsuario.correo.trim() : "N/A",
         
-        try {
-            // El resto de la función de guardado no necesita cambios
-            const response = await fetch('guardar_resultados.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            const responseText = await response.text();
-            if (!response.ok) {
-                throw new Error(`Error del servidor (${response.status}): ${responseText}`);
-            }
-            const result = JSON.parse(responseText);
-            if (result.success) {
-                estadoGuardado.innerText = "¡Resultados guardados con éxito!";
-                estadoGuardado.style.color = 'green';
-            } else {
-                throw new Error(result.error || 'El servidor devolvió un error desconocido.');
-            }
-        } catch (error) {
-            estadoGuardado.innerText = `Error al guardar los datos.`;
-            estadoGuardado.style.color = 'red';
-            console.error('Error al guardar:', error);
+        // Expandimos manualmente cada carrera para asegurar el orden
+        mecanica: puntajes.mecanica || 0,
+        mecatronica: puntajes.mecatronica || 0,
+        arquitectura: puntajes.arquitectura || 0,
+        electronica: puntajes.electronica || 0,
+        logistica: puntajes.logistica || 0,
+        gestion: puntajes.gestion || 0,
+        ciencia_datos: puntajes.ciencia_datos || 0,
+        sistemas: puntajes.sistemas || 0,
+        semiconductores: puntajes.semiconductores || 0,
+        industrial: puntajes.industrial || 0,
+        electrica: puntajes.electrica || 0,
+        materiales: puntajes.materiales || 0,
+        
+        carrera_recomendada: ganadora || "No determinada"
+    };
+
+    console.log("Enviando datos expandidos a Google:", datosFinales);
+
+    try {
+        // 4. Petición a Google Apps Script
+        await fetch(URL_SCRIPT, {
+            method: 'POST',
+            mode: 'no-cors', 
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(datosFinales)
+        });
+
+        console.log("✅ ¡Sincronización exitosa con el Excel!");
+        
+        // Feedback visual opcional
+        if (document.getElementById('estado-guardado')) {
+            document.getElementById('estado-guardado').innerHTML = "🟢 Datos guardados en la nube.";
         }
+
+    } catch (error) {
+        console.error("❌ Error en la conexión POST:", error);
+    }
     }
 </script>
 </body>
