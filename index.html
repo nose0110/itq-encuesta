@@ -469,35 +469,46 @@ async function cargarPreguntas() {
     const URL_SCRIPT = "https://script.google.com/macros/s/AKfycbzZ88U-6IniBVNlttp38YigPSqkWqjKjf5EIVHvmW44Pq9JBqnbVPfMmR66wDVDhwvT8g/exec"; // La que probaste en el navegador
     
     try {
-        const response = await fetch(URL_SCRIPT);
-        const datos = await response.json();
+     const response = await fetch(URL_SCRIPT);
+        // Convertimos la respuesta a JSON
+        preguntas = await response.json(); 
         
-        // Guardamos las preguntas en la variable global
-        preguntas = datos; 
-        
-        if (preguntas.length > 0) {
+        console.log("Preguntas cargadas:", preguntas); // Para que las veas en F12
+
+        if (preguntas && preguntas.length > 0) {
+            indice = 0; // Reiniciamos el contador
             mostrarPregunta();
-        } else {
-            alert("El Excel parece estar vacío.");
         }
     } catch (error) {
-        console.error("Error al cargar:", error);
-        alert("No se pudo conectar con las preguntas del Excel.");
-    }
+        console.error("Error cargando el JSON:", error);
 }
 
-    function mostrarPregunta() {
-        regresarBtn.style.display = (indice > 0) ? 'block' : 'none';
-        if (indice < preguntas.length) {
-            document.getElementById("barra").style.width = (indice / preguntas.length) * 100 + "%";
-            document.getElementById("pregunta").innerText = preguntas[indice].texto;
-            let opcionesHTML = "";
-            preguntas[indice].opciones.forEach(op => { opcionesHTML += `<button onclick="responder('${op.cat}')">${op.txt}</button>`; });
-            document.getElementById("opciones").innerHTML = opcionesHTML;
-        } else {
-            mostrarResultado();
-        }
-    }
+function mostrarPregunta() {
+    if (!preguntas || preguntas.length === 0) return;
+
+    const preguntaActual = preguntas[indice];
+    const contenedorPregunta = document.getElementById('pregunta');
+    const contenedorOpciones = document.getElementById('opciones');
+
+    // 1. Ponemos el texto
+    contenedorPregunta.innerText = preguntaActual.texto;
+
+    // 2. Limpiamos botones viejos
+    contenedorOpciones.innerHTML = '';
+
+    // 3. Botón SÍ (Usa categoriaSi del Excel)
+    const btnSi = document.createElement('button');
+    btnSi.innerText = "Sí";
+    btnSi.onclick = () => procesarRespuesta(preguntaActual.categoriaSi);
+
+    // 4. Botón NO (Usa categoriaNo del Excel)
+    const btnNo = document.createElement('button');
+    btnNo.innerText = "No";
+    btnNo.onclick = () => procesarRespuesta(preguntaActual.categoriaNo);
+
+    contenedorOpciones.appendChild(btnSi);
+    contenedorOpciones.appendChild(btnNo);
+}
 
     function responder(categoria) {
         historialRespuestas[indice] = categoria;
