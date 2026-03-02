@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encuesta ITQ - Prueba de Conexión</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { color: #2c3e50; text-align: center; margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 5px; color: #666; font-size: 0.9rem; }
+        input { width: 100%; padding: 10px; margin-bottom: 1.5rem; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 6px; background: #3498db; color: white; font-size: 1rem; cursor: pointer; transition: background 0.3s; }
+        button:hover { background: #2980b9; }
+        button:disabled { background: #ccc; }
+        #mensaje { text-align: center; margin-top: 1rem; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Encuesta ITQ</h2>
+    <form id="formularioEncuesta">
+        <label for="nombre">Nombre Completo</label>
+        <input type="text" id="nombre" name="nombre" placeholder="Ej. Juan Pérez" required>
+
+        <label for="respuesta">¿Qué tal funciona la conexión?</label>
+        <input type="text" id="respuesta" name="respuesta" placeholder="Tu opinión aquí" required>
+
+        <label for="email">Correo Electrónico</label>
+        <input type="email" id="email" name="email" placeholder="correo@ejemplo.com" required>
+
+        <button type="submit" id="btnEnviar">Enviar a la Base de Datos</button>
+    </form>
+    <div id="mensaje"></div>
+</div>
+
+<script>
+    // IMPORTANTE: Pega aquí tu URL de la implementación de Google Apps Script
+    const URL_SCRIPT = "https://script.google.com/macros/s/AKfycbwC30863_VQXQtGUqql2UDlRukQGvPulscPck4Ut20h_Stkl6H0bwavpKaVjK1DF7HRYQ/exec";
+
+    document.getElementById('formularioEncuesta').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const btn = document.getElementById('btnEnviar');
+        const msg = document.getElementById('mensaje');
+        
+        btn.disabled = true;
+        btn.innerText = "Procesando...";
+        msg.innerText = "";
+
+        const datos = {
+            nombre: document.getElementById('nombre').value,
+            respuesta: document.getElementById('respuesta').value,
+            email: document.getElementById('email').value
+        };
+
+        try {
+            // Enviamos los datos a Google usando modo 'no-cors'
+            await fetch(URL_SCRIPT, {
+                method: 'POST',
+                mode: 'no-cors', 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(datos)
+            });
+
+            msg.style.color = "green";
+            msg.innerText = "✅ ¡Éxito! Datos guardados en Google Sheets.";
+            document.getElementById('formularioEncuesta').reset();
+
+        } catch (error) {
+            msg.style.color = "red";
+            msg.innerText = "❌ Error al conectar con el servidor.";
+            console.error(error);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Enviar a la Base de Datos";
+        }
+    });
+</script>
+
+</body>
+</html>
