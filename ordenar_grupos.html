@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargar y Ordenar Grupos</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 98%; margin: 20px auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
+        .upload-section { text-align: center; margin-bottom: 30px; padding: 20px; border: 2px dashed #007BFF; border-radius: 8px; background-color: #f8f9fa; }
+        #file-upload { display: none; }
+        .upload-label { padding: 12px 25px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 8px; border: none; background-color: #007BFF; color: white; }
+        .upload-label:hover { background-color: #0056b3; }
+        #status { text-align: center; margin-top: 15px; font-style: italic; color: #555; min-height: 24px; }
+        #debug-panel { background: #1e1e1e; color: #0f0; padding: 15px; margin: 20px 0; border-radius: 8px; font-family: monospace; font-size: 11px; max-height: 200px; overflow: auto; display: none; }
+        #debug-panel.show { display: block; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+        td, th { padding: 8px 10px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #007BFF; color: white; position: sticky; top: 0; }
+        .controls-section { display: none; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; padding: 20px; margin-top: 20px; border-top: 1px solid #eee; background: #fafafa; border-radius: 8px; }
+        .control-group { display: flex; flex-direction: column; align-items: flex-start; }
+        .control-group label { font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        .control-group input, .control-group select { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; min-width: 150px; }
+        .action-button { padding: 12px 25px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 8px; border: none; color: white; margin: 5px; }
+        #process-data-btn { background-color: #28a745; }
+        #process-data-btn:hover { background-color: #218838; }
+        #export-excel-btn { background-color: #17a2b8; }
+        #export-excel-btn:hover { background-color: #138496; }
+        .action-button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #output-container { margin-top: 30px; }
+        .group-wrapper { margin-bottom: 40px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .group-wrapper h2 { border-bottom: 2px solid #007BFF; padding-bottom: 10px; margin: 0 0 15px 0; }
+        .group-wrapper h2[data-arq="1"] { border-color: #6f42c1; color: #6f42c1; }
+        .table-container { max-height: 500px; overflow: auto; border: 1px solid #eee; }
+        .summary-section { background: #fff3f3; border: 2px solid #dc3545; }
+        .summary-section h2 { color: #dc3545; border-color: #dc3545; }
+        .toggle-debug { background: #6c757d; font-size: 12px; padding: 5px 10px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📋 Cargar y Ordenar Grupos</h1>
+        
+        <div class="upload-section">
+            <label for="file-upload" class="upload-label">📁 Seleccionar Excel</label>
+            <input type="file" id="file-upload" accept=".xlsx, .xls">
+            <div id="status">Esperando archivo...</div>
+            <button class="action-button toggle-debug" onclick="toggleDebug()">🐛 Ver/ocultar depuración</button>
+        </div>
+        
+        <div id="debug-panel"></div>
+        
+        <div class="controls-section" id="controls-section">
+            <div class="control-group">
+                <label>Registros por Grupo:</label>
+                <input type="number" id="group-size-input" value="20" min="1">
+            </div>
+            <div class="control-group">
+                <label>Ordenar por:</label>
+                <select id="sort-column-select"></select>
+            </div>
+            <div class="control-group">
+                <label>Dirección:</label>
+                <input type="radio" id="sort-asc" name="sort-direction" value="asc" checked>
+                <label for="sort-asc">Asc</label>
+                <input type="radio" id="sort-desc" name="sort-direction" value="desc">
+                <label for="sort-desc">Desc</label>
+            </div>
+            <button id="process-data-btn" class="action-button">⚙️ Procesar</button>
+            <button id="export-excel-btn" class="action-button" disabled>📤 Exportar</button>
+        </div>
+        
+        <div id="output-container"></div>
+    </div>
+
+    <script>
+        // === VARIABLES GLOBALES ===
+        let headers = [], dataRows = [], columnas = {};
+        const fileInput = document.getElementById('file-upload');
+        const statusDiv = document.getElementById('status');
+        const controlsSection = document.getElementById('controls-section');
+        const groupSizeInput = document.getElementById('group-size-input');
+        const sortColumnSelect = document.getElementById('sort-column-select');
+        const processBtn = document.getElementById('process-data-btn');
+        const exportBtn = document.getElementById('export-excel-btn');
+        const outputContainer = document.getElementById('output-container');
+        const debugPanel = document.getElementById('debug-panel');
+
+        function log(msg) {
+            console.log(msg);
+            if (debugPanel.classList.contains('show')) {
+                debugPanel.innerHTML += `<div>${new Date().toLocaleTimeString()} - ${msg}</div>`;
+                debugPanel.scrollTop = debugPanel.scrollHeight;
+            }
+        }
+
+        function toggleDebug() {
+            debugPanel.classList.toggle('show');
+            if (debugPanel.classList.contains('show')) {
+                debugPanel.innerHTML = '<div>=== Panel de depuración activado ===</div>';
+            }
+        }
+
+        function detectarColumna(headers, palabras) {
+            const norm = t => (t||'').toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g," ").trim();
+            for (let i=0; i<headers.length; i++) {
+                const h = norm(headers[i]);
+                for (const p of palabras) if (h.includes(norm(p))) return i;
+            }
+            return -1;
+        }
+
+        function detectarColumnasCriticas(headers) {
+            return {
+                pago: detectarColumna(headers, ['recibo','pago','comprobante','deposito','transferencia','abono','folio']),
+                nombre: detectarColumna(headers, ['nombre','aspirante','alumno','estudiante','fullname']),
+                telefono: detectarColumna(headers, ['telefono','teléfono','celular','movil','phone','contacto','cel']),
+                carrera: detectarColumna(headers, ['opción','carrera','programa','curso','area','especialidad'])
+            };
+        }
+
+        function createGroupTable(groupData, groupIndex, suffix="") {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'group-wrapper';
+            const title = document.createElement('h2');
+            title.textContent = `Grupo ${groupIndex}${suffix}`;
+            title.setAttribute('data-arq', suffix==='a'?1:0);
+            wrapper.appendChild(title);
+            
+            const container = document.createElement('div');
+            container.className = 'table-container';
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+            
+            let headHTML = '<tr>';
+            headers.forEach(h => headHTML += `<th>${(h||'Col').toString().substring(0,30)}</th>`);
+            headHTML += '</tr>';
+            thead.innerHTML = headHTML;
+            
+            groupData.forEach(row => {
+                const tr = document.createElement('tr');
+                let rowHTML = '';
+                for (let i=0; i<headers.length; i++) {
+                    const c = row[i];
+                    rowHTML += `<td>${(c===null||c===undefined||String(c).trim()==='')?'S/N':c}</td>`;
+                }
+                tr.innerHTML = rowHTML;
+                tbody.appendChild(tr);
+            });
+            table.appendChild(thead); table.appendChild(tbody);
+            container.appendChild(table);
+            wrapper.appendChild(container);
+            outputContainer.appendChild(wrapper);
+        }
+
+        // === CARGAR ARCHIVO ===
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            log(`📁 Archivo seleccionado: ${file.name}`);
+            statusDiv.textContent = '🔄 Leyendo...';
+            outputContainer.innerHTML = '';
+            controlsSection.style.display = 'none';
+            exportBtn.disabled = true;
+            debugPanel.innerHTML = '<div>=== Nuevo archivo ===</div>';
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const data = new Uint8Array(ev.target.result);
+                    const wb = XLSX.read(data, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+                    
+                    log(`📄 Hoja: ${wb.SheetNames[0]}`);
+                    log(`📊 Filas totales leídas: ${json?.length || 0}`);
+                    
+                    if (!json || json.length < 2) {
+                        statusDiv.textContent = '❌ No hay datos válidos';
+                        log('❌ Error: menos de 2 filas');
+                        return;
+                    }
+                    
+                    // Encabezados
+                    headers = json[0].map((h,i) => {
+                        const val = (h || '').toString().trim();
+                        return val || `Columna${i+1}`;
+                    });
+                    log(`🏷️ Columnas detectadas: ${headers.length}`);
+                    log(`📋 Encabezados: ${headers.join(' | ')}`);
+                    
+                    // Filas de datos
+                    dataRows = json.slice(1).filter(row => 
+                        row && row.some(c => c !== null && String(c).trim() !== '')
+                    );
+                    log(`✅ Filas de datos válidas: ${dataRows.length}`);
+                    
+                    // Mostrar primeras 3 filas como ejemplo
+                    if (dataRows.length > 0) {
+                        log('🔍 Primeras filas (ejemplo):');
+                        for (let i=0; i<Math.min(3, dataRows.length); i++) {
+                            log(`   Fila ${i+1}: ${dataRows[i].slice(0,5).map(c=>`"${c}"`).join(', ')}...`);
+                        }
+                    }
+                    
+                    // Detectar columnas críticas
+                    columnas = detectarColumnasCriticas(headers);
+                    log(`🔍 Columnas críticas: Pago=${columnas.pago}, Nombre=${columnas.nombre}, Teléfono=${columnas.telefono}, Carrera=${columnas.carrera}`);
+                    
+                    // Llenar selector de ordenamiento
+                    sortColumnSelect.innerHTML = '';
+                    headers.forEach((h,i) => {
+                        const opt = document.createElement('option');
+                        opt.value = i; opt.textContent = h;
+                        sortColumnSelect.appendChild(opt);
+                    });
+                    
+                    statusDiv.textContent = `✅ ${dataRows.length} registros. Listo para procesar.`;
+                    controlsSection.style.display = 'flex';
+                    exportBtn.disabled = false;
+                    
+                } catch (err) {
+                    log(`❌ Error al leer: ${err.message}`);
+                    console.error(err);
+                    statusDiv.textContent = `❌ Error: ${err.message}`;
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // === PROCESAR DATOS ===
+        function processAndDisplayData() {
+            log("🚀 Iniciando procesamiento...");
+            outputContainer.innerHTML = '<div style="text-align:center;padding:40px;"><h3>⏳ Procesando...</h3></div>';
+            processBtn.disabled = true;
+
+            setTimeout(() => {
+                try {
+                    const groupSize = parseInt(groupSizeInput.value) || 20;
+                    const sortIdx = parseInt(sortColumnSelect.value) || 0;
+                    const dir = document.querySelector('input[name="sort-direction"]:checked').value;
+                    const dirMod = dir === 'asc' ? 1 : -1;
+
+                    log(`⚙️ Parámetros: Tamaño=${groupSize}, Ordenar por col=${sortIdx} (${headers[sortIdx]}), Dirección=${dir}`);
+                    log(`📦 Total de filas a procesar: ${dataRows.length}`);
+
+                    // Clasificar
+                    let arqPago=[], arqSin=[], restoPago=[], restoSin=[];
+
+                    dataRows.forEach((row, idx) => {
+                        // Detectar Arquitectura (en columna carrera o en toda la fila)
+                        let tieneArq = false;
+                        if (columnas.carrera >= 0 && row[columnas.carrera]) {
+                            tieneArq = String(row[columnas.carrera]).toLowerCase().includes('arquitectura');
+                        } else {
+                            tieneArq = row.some(c => String(c||'').toLowerCase().includes('arquitectura'));
+                        }
+                        
+                        // Detectar pago: SI TIENE VALOR NO VACÍO → tiene pago
+                        let tienePago = false;
+                        if (columnas.pago >= 0) {
+                            const val = String(row[columnas.pago] || '').trim().toLowerCase();
+                            // Tiene pago si tiene algún valor que NO sea de la lista "sin pago"
+                            if (val && !['0','no','pendiente','nulo','null','n/a','na','sin',''].includes(val)) {
+                                tienePago = true;
+                            }
+                        } else {
+                            // Si no se detectó columna de pago, asumir que todos tienen pago
+                            tienePago = true;
+                        }
+                        
+                        // Clasificar
+                        if (tieneArq) {
+                            if (tienePago) arqPago.push(row); else arqSin.push(row);
+                        } else {
+                            if (tienePago) restoPago.push(row); else restoSin.push(row);
+                        }
+                        
+                        // Debug en primeras 5 filas
+                        if (idx < 5) {
+                            const pagoVal = columnas.pago>=0 ? row[columnas.pago] : 'N/A';
+                            const carreraVal = columnas.carrera>=0 ? row[columnas.carrera] : 'N/A';
+                            log(`🔍 Fila ${idx+1}: Carrera="${carreraVal}"→Arq=${tieneArq} | Pago="${pagoVal}"→Pago=${tienePago}`);
+                        }
+                    });
+
+                    // Ordenar función
+                    const ordenar = arr => arr.sort((a,b) => {
+                        const A = a[sortIdx]||'', B = b[sortIdx]||'';
+                        const nA=parseFloat(A), nB=parseFloat(B);
+                        if (!isNaN(nA) && !isNaN(nB)) return (nA-nB)*dirMod;
+                        return String(A).localeCompare(String(B), 'es', {numeric:true}) * dirMod;
+                    });
+                    [arqPago,arqSin,restoPago,restoSin].forEach(a=>{if(a.length) ordenar(a);});
+
+                    outputContainer.innerHTML = '';
+                    log(`📊 RESULTADOS: Arq+Pago:${arqPago.length} | Arq-SinPago:${arqSin.length} | Resto+Pago:${restoPago.length} | Resto-SinPago:${restoSin.length}`);
+
+                    // Crear grupos
+                    let todos = [];
+                    
+                    // Arquitectura (con "a")
+                    for (let i=0; i<arqPago.length; i+=groupSize) {
+                        todos.push({id:`${Math.floor(i/groupSize)+1}a`, datos:[...arqPago.slice(i,i+groupSize)], esArq:true, num:Math.floor(i/groupSize)+1});
+                    }
+                    // Normales
+                    for (let i=0; i<restoPago.length; i+=groupSize) {
+                        todos.push({id:`${Math.floor(i/groupSize)+1}`, datos:[...restoPago.slice(i,i+groupSize)], esArq:false, num:Math.floor(i/groupSize)+1});
+                    }
+
+                    // Distribuir sin pago
+                    const sinPago = [...arqSin, ...restoSin];
+                    let resumen = [];
+                    sinPago.forEach((row, i) => {
+                        if (todos.length > 0) {
+                            const t = todos[i % todos.length];
+                            t.datos.push(row);
+                            const nom = columnas.nombre>=0 ? (row[columnas.nombre]||'S/N') : 'S/N';
+                            const tel = columnas.telefono>=0 ? (row[columnas.telefono]||'S/N') : 'S/N';
+                            resumen.push({nombre:String(nom).trim(), telefono:String(tel).trim(), grupo:t.id});
+                        }
+                    });
+
+                    // Renderizar
+                    todos.filter(g=>g.esArq).forEach(g=>{ if(g.datos.length) createGroupTable(g.datos, g.num, "a"); });
+                    todos.filter(g=>!g.esArq).forEach(g=>{ if(g.datos.length) createGroupTable(g.datos, g.num, ""); });
+
+                    // Resumen sin pago
+                    if (resumen.length > 0) {
+                        const wrap = document.createElement('div');
+                        wrap.className = 'group-wrapper summary-section';
+                        const tit = document.createElement('h2');
+                        tit.textContent = '📋 Resumen: SIN PAGO';
+                        wrap.appendChild(tit);
+                        const cont = document.createElement('div'); cont.className='table-container';
+                        const tab = document.createElement('table');
+                        tab.innerHTML = `<thead><tr><th>Nombre</th><th>Teléfono</th><th>Grupo</th></tr></thead><tbody></tbody>`;
+                        const tb = tab.querySelector('tbody');
+                        resumen.forEach(r => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `<td>${r.nombre}</td><td>${r.telefono}</td><td><strong>Grupo ${r.grupo}</strong></td>`;
+                            tb.appendChild(tr);
+                        });
+                        cont.appendChild(tab); wrap.appendChild(cont); wrap.appendChild(tab);
+                        outputContainer.appendChild(wrap);
+                        log(`✅ Resumen creado: ${resumen.length} registros sin pago`);
+                    }
+
+                    log("✨ Procesamiento completado");
+                    statusDiv.textContent = `✅ Listo: ${todos.length} grupos`;
+
+                } catch (err) {
+                    log(`❌ Error: ${err.message}`);
+                    console.error(err);
+                    outputContainer.innerHTML = `<div style="color:red;padding:20px;"><h3>Error:</h3><pre>${err.message}\n${err.stack}</pre></div>`;
+                    statusDiv.textContent = `❌ Error: ${err.message}`;
+                } finally {
+                    processBtn.disabled = false;
+                }
+            }, 50);
+        }
+
+        // === EXPORTAR ===
+        function exportToExcel() {
+            const groups = outputContainer.querySelectorAll('.group-wrapper');
+            if (!groups.length) { alert("Procesa primero"); return; }
+            const wb = XLSX.utils.book_new();
+            groups.forEach(wrap => {
+                const table = wrap.querySelector('table'); if (!table) return;
+                const rows = Array.from(table.querySelectorAll('tr'));
+                const data = rows.map(r => Array.from(r.querySelectorAll('th,td')).map(c=>c.textContent));
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                const widths = data[0]?.map((_,ci)=>{let m=10;data.forEach(r=>{const l=String(r[ci]||'').length;if(l>m)m=l;});return{wch:Math.min(m+2,50)};})||[{wch:15}];
+                ws['!cols'] = widths;
+                if (data[0]) {
+                    const style = {font:{bold:true,color:{rgb:"FFFFFFFF"}}, fill:{fgColor:{rgb:"FF007BFF"}}};
+                    const range = XLSX.utils.decode_range(ws['!ref']);
+                    for (let C=range.s.c; C<=range.e.c; ++C) { const addr=XLSX.utils.encode_cell({r:0,c:C}); if(ws[addr]) ws[addr].s=style; }
+                }
+                let name = wrap.querySelector('h2')?.textContent || 'Hoja';
+                name = name.replace(/[:*?[\]\\\/]/g,'').substring(0,31);
+                XLSX.utils.book_append_sheet(wb, ws, name);
+            });
+            XLSX.writeFile(wb, "Grupos_Ordenados.xlsx");
+            log("📤 Archivo exportado");
+        }
+
+        // === EVENTOS ===
+        processBtn.addEventListener('click', processAndDisplayData);
+        exportBtn.addEventListener('click', exportToExcel);
+    </script>
+</body>
+</html>
